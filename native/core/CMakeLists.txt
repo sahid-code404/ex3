@@ -7,3 +7,4 @@ add_library(camera_native SHARED
 
 target_compile_features(camera_native PRIVATE cxx_std_20)
 target_compile_options(camera_native PRIVATE -Wall -Wextra -Werror -fvisibility=hidden)
+target_link_libraries(camera_native PRIVATE dl)

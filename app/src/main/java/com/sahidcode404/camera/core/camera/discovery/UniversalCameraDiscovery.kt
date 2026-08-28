@@ -12,8 +12,6 @@ import com.sahidcode404.camera.core.camera.model.CameraRoute
 import com.sahidcode404.camera.core.camera.model.CameraTopology
 import com.sahidcode404.camera.core.camera.model.CameraTransportId
 import com.sahidcode404.camera.core.camera.model.DiscoveryFailure
-import com.sahidcode404.camera.core.camera.model.MetadataTrust
-import com.sahidcode404.camera.core.camera.model.PhysicalCameraId
 import com.sahidcode404.camera.core.camera.model.RoutingMethod
 import com.sahidcode404.camera.core.camera.topology.CameraTopologyResolver
 import com.sahidcode404.camera.core.camera.topology.EnvironmentFingerprint
@@ -34,10 +32,7 @@ class UniversalCameraDiscovery(context: Context) {
         val failures = mutableListOf<DiscoveryFailure>()
         val advertisedResult = enumerateAdvertisedIds()
         val advertisedIds = advertisedResult.getOrElse { error ->
-            failures += DiscoveryFailure(
-                stage = "camera2-enumeration",
-                message = error.javaClass.simpleName,
-            )
+            failures += DiscoveryFailure("camera2-enumeration", message = error.javaClass.simpleName)
             emptyList()
         }
         val boundedAdvertisedIds = if (advertisedIds.size <= DiscoveryBounds.MAX_CAMERA_IDS) {
@@ -59,24 +54,12 @@ class UniversalCameraDiscovery(context: Context) {
         boundedAdvertisedIds.sortedBy { it.value }.forEach { id ->
             val directCharacteristics = characteristicsOrNull(id.value, "camera2-characteristics", failures) ?: return@forEach
             val directCollected = collector.collect(directCharacteristics)
-            val directRouting = if (directCollected.capabilities.isLogicalMultiCamera) {
-                RoutingMethod.LOGICAL_DEFAULT
-            } else {
-                RoutingMethod.DIRECT
-            }
-            profiles += profile(
-                route = CameraRoute(id, null, directRouting),
-                collected = directCollected,
-                publiclyAdvertised = true,
-            )
+            val directRouting = if (directCollected.capabilities.isLogicalMultiCamera) RoutingMethod.LOGICAL_DEFAULT else RoutingMethod.DIRECT
+            profiles += profile(CameraRoute(id, null, directRouting), directCollected, publiclyAdvertised = true)
 
             directCollected.capabilities.physicalMemberIds.forEach physicalLoop@ { physicalId ->
                 if (profiles.size >= DiscoveryBounds.MAX_CAMERA_IDS * 2) {
-                    failures += DiscoveryFailure(
-                        stage = "physical-characteristics",
-                        cameraId = id.value,
-                        message = "profile-bound-reached",
-                    )
+                    failures += DiscoveryFailure("physical-characteristics", id.value, "profile-bound-reached")
                     return@physicalLoop
                 }
                 val physicalCharacteristics = characteristicsOrNull(
@@ -86,26 +69,29 @@ class UniversalCameraDiscovery(context: Context) {
                 ) ?: return@physicalLoop
                 val physicalCollected = collector.collect(physicalCharacteristics)
                 profiles += profile(
-                    route = CameraRoute(id, physicalId, RoutingMethod.LOGICAL_PHYSICAL_MEMBER),
-                    collected = physicalCollected,
+                    CameraRoute(id, physicalId, RoutingMethod.LOGICAL_PHYSICAL_MEMBER),
+                    physicalCollected,
                     publiclyAdvertised = advertisedIdSet.contains(physicalId.value),
                 )
             }
         }
 
-        val topology = CameraTopologyResolver.resolve(
+        val ndkEvidence = NdkCameraEvidence.collect()
+        val ndkSummary = NdkEvidenceReconciler.summarize(advertisedIdSet, profiles, ndkEvidence)
+        val resolved = CameraTopologyResolver.resolve(
             environmentFingerprint = fingerprint,
             profiles = profiles,
             advertisedCameraCount = boundedAdvertisedIds.size,
             failures = failures,
             truncatedFailureCount = (advertisedIds.size - boundedAdvertisedIds.size).coerceAtLeast(0),
         )
+        val topology = resolved.copy(diagnostics = resolved.diagnostics.copy(ndk = ndkSummary))
 
         try {
             cacheStore.save(topology)
-        } catch (error: IOException) {
+        } catch (_: IOException) {
             // Cache persistence is non-critical discovery state; discovery results remain valid in memory.
-        } catch (error: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             // A bounded serialization failure must not take down camera discovery.
         }
         return topology
@@ -125,10 +111,7 @@ class UniversalCameraDiscovery(context: Context) {
     )
 
     private fun enumerateAdvertisedIds(): Result<List<CameraTransportId>> = runCatching {
-        cameraManager.cameraIdList
-            .filter { it.isNotBlank() }
-            .distinct()
-            .map(::CameraTransportId)
+        cameraManager.cameraIdList.filter { it.isNotBlank() }.distinct().map(::CameraTransportId)
     }
 
     private fun characteristicsOrNull(
@@ -140,18 +123,14 @@ class UniversalCameraDiscovery(context: Context) {
     } catch (error: CameraAccessException) {
         failures += DiscoveryFailure(stage, cameraId, "CameraAccessException:${error.reason}")
         null
-    } catch (error: IllegalArgumentException) {
+    } catch (_: IllegalArgumentException) {
         failures += DiscoveryFailure(stage, cameraId, "IllegalArgumentException")
         null
-    } catch (error: SecurityException) {
+    } catch (_: SecurityException) {
         failures += DiscoveryFailure(stage, cameraId, "SecurityException")
         null
     }
 
     private fun environmentFingerprint(ids: Collection<CameraTransportId>): String =
-        EnvironmentFingerprint.create(
-            osBuildFingerprint = Build.FINGERPRINT,
-            sdkInt = Build.VERSION.SDK_INT,
-            advertisedCameraIds = ids,
-        )
+        EnvironmentFingerprint.create(Build.FINGERPRINT, Build.VERSION.SDK_INT, ids)
 }

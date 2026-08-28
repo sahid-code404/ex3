@@ -4,110 +4,64 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class CameraTransportId(val value: String) {
-    init {
-        require(value.isNotBlank()) { "Camera transport ID must not be blank" }
-    }
+    init { require(value.isNotBlank()) { "Camera transport ID must not be blank" } }
 }
 
 @Serializable
 data class PhysicalCameraId(val value: String) {
-    init {
-        require(value.isNotBlank()) { "Physical camera ID must not be blank" }
-    }
+    init { require(value.isNotBlank()) { "Physical camera ID must not be blank" } }
 }
 
 @Serializable
 data class IntSizeValue(val width: Int, val height: Int) {
-    init {
-        require(width > 0 && height > 0) { "Dimensions must be positive" }
-    }
-
+    init { require(width > 0 && height > 0) { "Dimensions must be positive" } }
     val area: Long get() = width.toLong() * height.toLong()
 }
 
 @Serializable
 data class FloatSizeValue(val width: Float, val height: Float) {
-    init {
-        require(width > 0f && height > 0f) { "Dimensions must be positive" }
-    }
+    init { require(width > 0f && height > 0f) { "Dimensions must be positive" } }
 }
 
 @Serializable
 data class FloatRangeValue(val lower: Float, val upper: Float) {
-    init {
-        require(lower <= upper) { "Invalid float range" }
-    }
+    init { require(lower <= upper) { "Invalid float range" } }
 }
 
 @Serializable
 data class IntRectValue(val left: Int, val top: Int, val right: Int, val bottom: Int) {
-    init {
-        require(right > left && bottom > top) { "Rectangle must have positive area" }
-    }
-
+    init { require(right > left && bottom > top) { "Rectangle must have positive area" } }
     val width: Int get() = right - left
     val height: Int get() = bottom - top
 }
 
 @Serializable
 data class IntRangeValue(val lower: Int, val upper: Int) {
-    init {
-        require(lower <= upper) { "Invalid integer range" }
-    }
+    init { require(lower <= upper) { "Invalid integer range" } }
 }
 
 @Serializable
 data class LongRangeValue(val lower: Long, val upper: Long) {
-    init {
-        require(lower <= upper) { "Invalid long range" }
-    }
+    init { require(lower <= upper) { "Invalid long range" } }
 }
 
 @Serializable
-enum class CameraFacing {
-    FRONT,
-    BACK,
-    EXTERNAL,
-    UNKNOWN,
-}
+enum class CameraFacing { FRONT, BACK, EXTERNAL, UNKNOWN }
 
 @Serializable
-enum class RoutingMethod {
-    DIRECT,
-    LOGICAL_DEFAULT,
-    LOGICAL_PHYSICAL_MEMBER,
-}
+enum class RoutingMethod { DIRECT, LOGICAL_DEFAULT, LOGICAL_PHYSICAL_MEMBER }
 
 @Serializable
-enum class MetadataTrust {
-    COMPLETE,
-    PARTIAL,
-    FAILED,
-}
+enum class MetadataTrust { COMPLETE, PARTIAL, FAILED }
 
 @Serializable
-enum class PreviewTrust {
-    ADVERTISED,
-    PREVIEW_VERIFIED,
-    TEMPORARILY_FAILED,
-    STRUCTURALLY_UNUSABLE,
-}
+enum class PreviewTrust { ADVERTISED, PREVIEW_VERIFIED, TEMPORARILY_FAILED, STRUCTURALLY_UNUSABLE }
 
 @Serializable
-enum class RawTrust {
-    UNSUPPORTED,
-    ADVERTISED,
-    RAW_VERIFIED,
-    TEMPORARILY_FAILED,
-    STRUCTURALLY_UNUSABLE,
-}
+enum class RawTrust { UNSUPPORTED, ADVERTISED, RAW_VERIFIED, TEMPORARILY_FAILED, STRUCTURALLY_UNUSABLE }
 
 @Serializable
-enum class StreamKind {
-    RAW_SENSOR,
-    PRIVATE_PREVIEW,
-    YUV_420_888,
-}
+enum class StreamKind { RAW_SENSOR, PRIVATE_PREVIEW, YUV_420_888 }
 
 @Serializable
 data class StreamSpec(
@@ -160,9 +114,7 @@ data class CameraCapabilities(
     val flashAvailable: Boolean? = null,
 ) {
     fun streams(kind: StreamKind): List<StreamSpec> = streams.filter { it.kind == kind }
-
-    val hasRawSensorOutput: Boolean
-        get() = streams.any { it.kind == StreamKind.RAW_SENSOR }
+    val hasRawSensorOutput: Boolean get() = streams.any { it.kind == StreamKind.RAW_SENSOR }
 }
 
 @Serializable
@@ -193,12 +145,24 @@ data class DiscoveryFailure(
 )
 
 @Serializable
+data class NdkDiscoverySummary(
+    val available: Boolean = false,
+    val advertisedCameraCount: Int = 0,
+    val ndkOnlyCameraIds: List<String> = emptyList(),
+    val javaOnlyCameraIds: List<String> = emptyList(),
+    val metadataMismatchCameraIds: List<String> = emptyList(),
+    val truncatedDifferenceCount: Int = 0,
+    val error: String? = null,
+)
+
+@Serializable
 data class DiscoveryDiagnostics(
     val advertisedCameraCount: Int,
     val profileCount: Int,
     val canonicalLensCount: Int,
     val failures: List<DiscoveryFailure> = emptyList(),
     val truncatedFailureCount: Int = 0,
+    val ndk: NdkDiscoverySummary = NdkDiscoverySummary(),
 )
 
 @Serializable

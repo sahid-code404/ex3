@@ -3,6 +3,7 @@ package com.sahidcode404.camera.core.camera.discovery
 import com.sahidcode404.camera.core.camera.model.CameraRoute
 import com.sahidcode404.camera.core.camera.model.CameraTopology
 import com.sahidcode404.camera.core.camera.model.PreviewTrust
+import com.sahidcode404.camera.core.camera.model.RawTrust
 
 internal object RuntimeTrustReconciler {
     fun merge(
@@ -39,6 +40,22 @@ internal object RuntimeTrustReconciler {
             if (profile.route == route && profile.previewTrust != PreviewTrust.PREVIEW_VERIFIED) {
                 changed = true
                 profile.copy(previewTrust = PreviewTrust.PREVIEW_VERIFIED)
+            } else {
+                profile
+            }
+        }
+        return if (changed) topology.copy(profiles = profiles) else null
+    }
+
+    fun markRawVerified(
+        topology: CameraTopology,
+        route: CameraRoute,
+    ): CameraTopology? {
+        var changed = false
+        val profiles = topology.profiles.map { profile ->
+            if (profile.route == route && profile.rawTrust != RawTrust.RAW_VERIFIED) {
+                changed = true
+                profile.copy(rawTrust = RawTrust.RAW_VERIFIED)
             } else {
                 profile
             }

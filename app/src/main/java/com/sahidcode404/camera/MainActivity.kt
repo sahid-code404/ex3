@@ -2,6 +2,7 @@ package com.sahidcode404.camera
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -53,6 +54,8 @@ import com.sahidcode404.camera.core.camera.session.CameraSessionController
 import com.sahidcode404.camera.core.camera.session.CameraSessionState
 import com.sahidcode404.camera.core.camera.session.PreviewTarget
 import com.sahidcode404.camera.core.camera.session.PreviewTargetFactory
+import com.sahidcode404.camera.core.camera.session.RawCaptureState
+import com.sahidcode404.camera.core.camera.session.isBusy
 import com.sahidcode404.camera.core.camera.session.toHotPreviewSeed
 import com.sahidcode404.camera.ota.DevelopmentUpdateState
 import com.sahidcode404.camera.ota.DevelopmentUpdater
@@ -68,6 +71,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var discoveryCoordinator: DiscoveryCoordinator
     private lateinit var cameraSessionController: CameraSessionController
     private var cameraPermissionGranted by mutableStateOf(false)
+    private var pendingRawCaptureAfterStoragePermission = false
     private var postPreviewWorkStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +85,7 @@ class MainActivity : ComponentActivity() {
             val updateState by developmentUpdater.state.collectAsState()
             val discoveryState by discoveryCoordinator.state.collectAsState()
             val sessionState by cameraSessionController.state.collectAsState()
+            val rawCaptureState by cameraSessionController.rawCaptureState.collectAsState()
             var aspectMode by remember { mutableStateOf(PreviewAspectMode.FOUR_THREE) }
 
             val renderedPreview = (sessionState as? CameraSessionState.Previewing)
@@ -98,17 +103,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val savedRaw = rawCaptureState as? RawCaptureState.Saved
+            LaunchedEffect(savedRaw?.captureId) {
+                val saved = savedRaw ?: return@LaunchedEffect
+                discoveryCoordinator.recordRawVerified(saved.route)
+            }
+
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
                     CameraScreen(
                         permissionGranted = cameraPermissionGranted,
                         sessionState = sessionState,
+                        rawCaptureState = rawCaptureState,
                         discoveryState = discoveryState,
                         updateState = updateState,
                         aspectMode = aspectMode,
                         controller = cameraSessionController,
                         onAspectMode = { aspectMode = it },
                         onRequestPermission = ::requestCameraPermission,
+                        onCaptureRaw = ::requestRawCapture,
                         onRefreshDiscovery = {
                             val verifiedRoute = (sessionState as? CameraSessionState.Previewing)
                                 ?.takeIf { it.firstFrameSeen }
@@ -160,9 +173,21 @@ class MainActivity : ComponentActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_PERMISSION_REQUEST) {
-            cameraPermissionGranted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-            cameraSessionController.updatePermission(cameraPermissionGranted)
+        when (requestCode) {
+            CAMERA_PERMISSION_REQUEST -> {
+                cameraPermissionGranted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+                cameraSessionController.updatePermission(cameraPermissionGranted)
+            }
+            STORAGE_PERMISSION_REQUEST -> {
+                val captureAfterGrant = pendingRawCaptureAfterStoragePermission
+                pendingRawCaptureAfterStoragePermission = false
+                if (
+                    captureAfterGrant &&
+                    grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+                ) {
+                    cameraSessionController.captureRawDng()
+                }
+            }
         }
     }
 
@@ -170,8 +195,24 @@ class MainActivity : ComponentActivity() {
         requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_REQUEST)
     }
 
+    private fun requestRawCapture() {
+        if (
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingRawCaptureAfterStoragePermission = true
+            requestPermissions(
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                STORAGE_PERMISSION_REQUEST,
+            )
+            return
+        }
+        cameraSessionController.captureRawDng()
+    }
+
     private companion object {
         const val CAMERA_PERMISSION_REQUEST = 1001
+        const val STORAGE_PERMISSION_REQUEST = 1002
     }
 }
 
@@ -179,18 +220,21 @@ class MainActivity : ComponentActivity() {
 private fun CameraScreen(
     permissionGranted: Boolean,
     sessionState: CameraSessionState,
+    rawCaptureState: RawCaptureState,
     discoveryState: DiscoveryState,
     updateState: DevelopmentUpdateState,
     aspectMode: PreviewAspectMode,
     controller: CameraSessionController,
     onAspectMode: (PreviewAspectMode) -> Unit,
     onRequestPermission: () -> Unit,
+    onCaptureRaw: () -> Unit,
     onRefreshDiscovery: () -> Unit,
     onCheckUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
 ) {
     val target = sessionState.targetOrNull()
     val topology = discoveryState.topologyOrNull()
+    val previewReady = (sessionState as? CameraSessionState.Previewing)?.firstFrameSeen == true
 
     Column(
         modifier = Modifier
@@ -251,6 +295,13 @@ private fun CameraScreen(
             )
         }
 
+        Button(
+            onClick = onCaptureRaw,
+            enabled = previewReady && !rawCaptureState.isBusy,
+        ) {
+            Text(if (rawCaptureState.isBusy) "RAW…" else "RAW DNG")
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -269,7 +320,7 @@ private fun CameraScreen(
         }
 
         Text(
-            text = discoveryState.compactLabel() + " · " + updateState.compactLabel(),
+            text = discoveryState.compactLabel() + " · " + rawCaptureState.compactLabel() + " · " + updateState.compactLabel(),
             color = Color.LightGray,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 2,
@@ -455,6 +506,16 @@ private fun DiscoveryState.compactLabel(): String = when (this) {
     is DiscoveryState.Discovering -> "Discovering"
     is DiscoveryState.Complete -> "${topology.lenses.size} lenses"
     is DiscoveryState.Failed -> "Discovery failed"
+}
+
+private fun RawCaptureState.compactLabel(): String = when (this) {
+    RawCaptureState.Idle -> "RAW ready"
+    is RawCaptureState.Preparing -> "RAW preparing"
+    is RawCaptureState.Capturing -> "RAW capturing ${size.width}×${size.height}"
+    is RawCaptureState.Saving -> "RAW saving"
+    is RawCaptureState.Saved -> "DNG saved ${size.width}×${size.height}"
+    is RawCaptureState.Unsupported -> "RAW unsupported"
+    is RawCaptureState.Failed -> "RAW failed"
 }
 
 private fun DevelopmentUpdateState.compactLabel(): String = when (this) {

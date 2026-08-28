@@ -51,6 +51,17 @@ class UniversalCameraDiscovery(context: Context) {
         return updated
     }
 
+    fun recordRawVerified(route: CameraRoute): CameraTopology? {
+        val ids = enumerateAdvertisedIds().getOrNull() ?: return null
+        if (ids.isEmpty() || ids.size > DiscoveryBounds.MAX_CAMERA_IDS) return null
+        if (ids.none { it == route.logicalCameraId }) return null
+        val fingerprint = environmentFingerprint(ids)
+        val cached = cacheStore.loadOrNull(fingerprint) ?: return null
+        val updated = RuntimeTrustReconciler.markRawVerified(cached, route) ?: return cached
+        saveTopologySafely(updated)
+        return updated
+    }
+
     fun discover(verifiedPreviewRoute: CameraRoute? = null): CameraTopology {
         val failures = mutableListOf<DiscoveryFailure>()
         val advertisedResult = enumerateAdvertisedIds()

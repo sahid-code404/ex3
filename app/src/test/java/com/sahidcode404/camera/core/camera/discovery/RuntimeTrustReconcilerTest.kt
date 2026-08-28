@@ -42,6 +42,22 @@ class RuntimeTrustReconcilerTest {
         assertNull(RuntimeTrustReconciler.markPreviewVerified(topology, route))
     }
 
+    @Test
+    fun successfulRawCapturePromotesOnlyExactRoute() {
+        val verifiedRoute = CameraRoute(CameraTransportId("opaque-a"), null, RoutingMethod.DIRECT)
+        val otherRoute = CameraRoute(CameraTransportId("opaque-b"), null, RoutingMethod.DIRECT)
+        val topology = topology(
+            profile("verified", verifiedRoute, PreviewTrust.PREVIEW_VERIFIED, RawTrust.ADVERTISED),
+            profile("other", otherRoute, PreviewTrust.PREVIEW_VERIFIED, RawTrust.ADVERTISED),
+        )
+
+        val updated = requireNotNull(RuntimeTrustReconciler.markRawVerified(topology, verifiedRoute))
+
+        assertEquals(RawTrust.RAW_VERIFIED, updated.profiles[0].rawTrust)
+        assertEquals(RawTrust.ADVERTISED, updated.profiles[1].rawTrust)
+        assertNull(RuntimeTrustReconciler.markRawVerified(updated, verifiedRoute))
+    }
+
     private fun profile(
         id: String,
         route: CameraRoute,

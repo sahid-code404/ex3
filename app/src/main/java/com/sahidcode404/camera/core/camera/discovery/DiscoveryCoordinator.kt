@@ -30,13 +30,14 @@ class DiscoveryCoordinator(context: Context) {
     suspend fun recordPreviewVerified(seed: HotPreviewSeed) {
         refreshMutex.withLock {
             val updated = withContext(Dispatchers.IO) { discovery.recordPreviewVerified(seed) } ?: return@withLock
-            mutableState.value = when (val current = mutableState.value) {
-                DiscoveryState.Idle -> DiscoveryState.Cached(updated)
-                is DiscoveryState.Cached -> DiscoveryState.Cached(updated)
-                is DiscoveryState.Discovering -> DiscoveryState.Discovering(updated)
-                is DiscoveryState.Complete -> DiscoveryState.Complete(updated)
-                is DiscoveryState.Failed -> current.copy(cachedTopology = updated)
-            }
+            applyTopologyUpdate(updated)
+        }
+    }
+
+    suspend fun recordRawVerified(route: CameraRoute) {
+        refreshMutex.withLock {
+            val updated = withContext(Dispatchers.IO) { discovery.recordRawVerified(route) } ?: return@withLock
+            applyTopologyUpdate(updated)
         }
     }
 
@@ -57,6 +58,16 @@ class DiscoveryCoordinator(context: Context) {
                     message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName,
                 )
             }
+        }
+    }
+
+    private fun applyTopologyUpdate(updated: CameraTopology) {
+        mutableState.value = when (val current = mutableState.value) {
+            DiscoveryState.Idle -> DiscoveryState.Cached(updated)
+            is DiscoveryState.Cached -> DiscoveryState.Cached(updated)
+            is DiscoveryState.Discovering -> DiscoveryState.Discovering(updated)
+            is DiscoveryState.Complete -> DiscoveryState.Complete(updated)
+            is DiscoveryState.Failed -> current.copy(cachedTopology = updated)
         }
     }
 }

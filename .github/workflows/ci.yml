@@ -61,13 +61,16 @@ jobs:
           echo "$BADGING" | grep -q "package: name='com.sahidcode404.camera'"
           echo "$BADGING" | grep -q "sdkVersion:'23'"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee /tmp/apksigner.txt
-          SIGNER_SHA="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' /tmp/apksigner.txt | tr 'A-F' 'a-f' | head -n1)"
+          SIGNER_SHA="$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/apksigner.txt | tr 'A-F' 'a-f' | head -n1)"
+          test -n "$SIGNER_SHA"
           test "$SIGNER_SHA" = "194bea7868e8a5d4a20d0dc22474e15f3f617eeb90471d2cd7ea405d341774e1"
           cp "$APK" Camera-dev.apk
           SHA="$(sha256sum Camera-dev.apk | awk '{print $1}')"
           SIZE="$(stat -c '%s' Camera-dev.apk)"
           VERSION_CODE="$(echo "$BADGING" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -n1)"
           VERSION_NAME="$(echo "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -n1)"
+          test -n "$VERSION_CODE"
+          test -n "$VERSION_NAME"
           printf 'sha=%s\nsize=%s\nversion_code=%s\nversion_name=%s\nsigner_sha=%s\n' "$SHA" "$SIZE" "$VERSION_CODE" "$VERSION_NAME" "$SIGNER_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Generate update metadata

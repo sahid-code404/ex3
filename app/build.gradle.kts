@@ -31,13 +31,14 @@ fun String.asBuildConfigLiteral(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
+    // Internal Kotlin namespace stays stable; the installed Android package identity is applicationId below.
     namespace = "com.sahidcode404.camera"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "com.sahidcode404.camera"
+        applicationId = "com.sahidcode404.universalcamera"
         minSdk = appMinSdk
         targetSdk = 37
         versionCode = 10_000 + ciRunNumber

@@ -12,7 +12,7 @@ class UpdatePolicyTest {
         val decision = UpdatePolicy.evaluate(
             metadata = metadata(versionCode = 101, signerSha256 = signer),
             currentVersionCode = 100,
-            applicationId = "com.sahidcode404.camera",
+            applicationId = "com.sahidcode404.universalcamera",
             sdkInt = 23,
             expectedSignerSha256 = signer,
         )
@@ -24,7 +24,7 @@ class UpdatePolicyTest {
         val decision = UpdatePolicy.evaluate(
             metadata = metadata(versionCode = 100, signerSha256 = signer),
             currentVersionCode = 100,
-            applicationId = "com.sahidcode404.camera",
+            applicationId = "com.sahidcode404.universalcamera",
             sdkInt = 23,
             expectedSignerSha256 = signer,
         )
@@ -65,7 +65,7 @@ class UpdatePolicyTest {
         UpdatePolicy.evaluate(
             metadata = metadata,
             currentVersionCode = 100,
-            applicationId = "com.sahidcode404.camera",
+            applicationId = "com.sahidcode404.universalcamera",
             sdkInt = 23,
             expectedSignerSha256 = signer,
         )
@@ -76,7 +76,7 @@ class UpdatePolicyTest {
     }
 
     private fun metadata(
-        applicationId: String = "com.sahidcode404.camera",
+        applicationId: String = "com.sahidcode404.universalcamera",
         versionCode: Long = 101,
         minSdk: Int = 23,
         apk: String = "Camera-dev.apk",

@@ -58,7 +58,7 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/37.0.0/aapt"
           APKSIGNER="$ANDROID_HOME/build-tools/37.0.0/apksigner"
           BADGING="$($AAPT dump badging "$APK")"
-          echo "$BADGING" | grep -q "package: name='com.sahidcode404.camera'"
+          echo "$BADGING" | grep -q "package: name='com.sahidcode404.universalcamera'"
           echo "$BADGING" | grep -q "sdkVersion:'23'"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee /tmp/apksigner.txt
           SIGNER_SHA="$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/apksigner.txt | tr 'A-F' 'a-f' | head -n1)"
@@ -86,7 +86,7 @@ jobs:
           payload = {
               "schema": 1,
               "channel": "development",
-              "applicationId": "com.sahidcode404.camera",
+              "applicationId": "com.sahidcode404.universalcamera",
               "versionCode": int(os.environ["VERSION_CODE"]),
               "versionName": os.environ["VERSION_NAME"],
               "minSdk": 23,

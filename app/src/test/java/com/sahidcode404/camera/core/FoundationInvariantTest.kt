@@ -6,9 +6,9 @@ import org.junit.Test
 
 class FoundationInvariantTest {
     @Test
-    fun api23AndPermanentIdentityAreFrozen() {
+    fun api23AndCurrentApplicationIdentityAreFrozen() {
         assertEquals(23, ArchitectureConstants.MIN_SDK)
-        assertEquals("com.sahidcode404.camera", ArchitectureConstants.APPLICATION_ID)
+        assertEquals("com.sahidcode404.universalcamera", ArchitectureConstants.APPLICATION_ID)
     }
 
     @Test

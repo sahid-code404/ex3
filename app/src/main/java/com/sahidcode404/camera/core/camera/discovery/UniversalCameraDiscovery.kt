@@ -110,8 +110,19 @@ class UniversalCameraDiscovery(context: Context) {
         evidence = collected.evidenceNotes,
     )
 
-    private fun enumerateAdvertisedIds(): Result<List<CameraTransportId>> = runCatching {
-        cameraManager.cameraIdList.filter { it.isNotBlank() }.distinct().map(::CameraTransportId)
+    private fun enumerateAdvertisedIds(): Result<List<CameraTransportId>> = try {
+        Result.success(
+            cameraManager.cameraIdList
+                .filter { it.isNotBlank() }
+                .distinct()
+                .map(::CameraTransportId),
+        )
+    } catch (error: CameraAccessException) {
+        Result.failure(error)
+    } catch (error: SecurityException) {
+        Result.failure(error)
+    } catch (error: IllegalArgumentException) {
+        Result.failure(error)
     }
 
     private fun characteristicsOrNull(

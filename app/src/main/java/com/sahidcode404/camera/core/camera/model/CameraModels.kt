@@ -33,6 +33,13 @@ data class FloatSizeValue(val width: Float, val height: Float) {
 }
 
 @Serializable
+data class FloatRangeValue(val lower: Float, val upper: Float) {
+    init {
+        require(lower <= upper) { "Invalid float range" }
+    }
+}
+
+@Serializable
 data class IntRectValue(val left: Int, val top: Int, val right: Int, val bottom: Int) {
     init {
         require(right > left && bottom > top) { "Rectangle must have positive area" }
@@ -142,7 +149,8 @@ data class CameraCapabilities(
     val maxProcessedStallingOutputStreams: Int? = null,
     val maxInputStreams: Int? = null,
     val croppingType: Int? = null,
-    val zoomRatioRange: FloatSizeValue? = null,
+    val maxDigitalZoom: Float? = null,
+    val zoomRatioRange: FloatRangeValue? = null,
     val distortionCorrectionModes: List<Int> = emptyList(),
     val lensShadingMapModes: List<Int> = emptyList(),
     val opticalStabilizationModes: List<Int> = emptyList(),

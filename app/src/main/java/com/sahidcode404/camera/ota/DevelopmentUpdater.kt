@@ -186,7 +186,7 @@ class DevelopmentUpdater(private val context: Context) {
         try {
             val response = connection.responseCode
             require(response in 200..299) { "APK HTTP $response" }
-            val declaredSize = connection.contentLengthLong
+            val declaredSize = connection.getHeaderField("Content-Length")?.trim()?.toLongOrNull() ?: -1L
             if (declaredSize > 0) require(declaredSize == metadata.size) { "APK Content-Length mismatch" }
             require(metadata.size <= UpdatePolicy.MAX_APK_BYTES) { "APK exceeds download bound" }
 
@@ -224,7 +224,7 @@ class DevelopmentUpdater(private val context: Context) {
         try {
             val response = connection.responseCode
             require(response in 200..299) { "metadata HTTP $response" }
-            val declared = connection.contentLengthLong
+            val declared = connection.getHeaderField("Content-Length")?.trim()?.toLongOrNull() ?: -1L
             if (declared > 0) require(declared <= maxBytes) { "metadata response too large" }
 
             val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))

@@ -54,7 +54,7 @@ public class CameraSessionController(context: Context) {
 
     private val appContext = context.applicationContext
     private val cameraManager = appContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-    private val bootstrapResolver = BootstrapPreviewTargetResolver(cameraManager)
+    private val bootstrapResolver = BootstrapPreviewTargetResolver(appContext, cameraManager)
     private val cameraThread = HandlerThread("CameraSessionController").apply { start() }
     private val cameraHandler = Handler(cameraThread.looper)
     private val generationCounter = AtomicLong(0L)

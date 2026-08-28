@@ -6,6 +6,7 @@ import com.sahidcode404.camera.core.camera.model.CameraProfile
 import com.sahidcode404.camera.core.camera.model.CameraRoute
 import com.sahidcode404.camera.core.camera.model.CameraTopology
 import com.sahidcode404.camera.core.camera.model.CanonicalLens
+import com.sahidcode404.camera.core.camera.model.HotPreviewSeed
 import com.sahidcode404.camera.core.camera.model.IntSizeValue
 import com.sahidcode404.camera.core.camera.model.MetadataTrust
 import com.sahidcode404.camera.core.camera.model.PreviewTrust
@@ -20,6 +21,24 @@ public data class PreviewTarget(
     val facing: CameraFacing,
     val sensorOrientationDegrees: Int,
     val sensorLandscapeAspect: Double,
+)
+
+public fun PreviewTarget.toHotPreviewSeed(): HotPreviewSeed = HotPreviewSeed(
+    stableId = stableId,
+    route = route,
+    streamSize = streamSize,
+    facing = facing,
+    sensorOrientationDegrees = sensorOrientationDegrees,
+    sensorLandscapeAspect = sensorLandscapeAspect,
+)
+
+public fun HotPreviewSeed.toPreviewTarget(): PreviewTarget = PreviewTarget(
+    stableId = stableId,
+    route = route,
+    streamSize = streamSize,
+    facing = facing,
+    sensorOrientationDegrees = sensorOrientationDegrees,
+    sensorLandscapeAspect = sensorLandscapeAspect,
 )
 
 public object PreviewTargetFactory {

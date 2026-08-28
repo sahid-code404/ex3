@@ -1,10 +1,12 @@
 package com.sahidcode404.camera.core.camera.session
 
+import android.content.Context
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
+import com.sahidcode404.camera.core.camera.discovery.HotPreviewCacheStore
 import com.sahidcode404.camera.core.camera.model.CameraCapabilities
 import com.sahidcode404.camera.core.camera.model.CameraFacing
 import com.sahidcode404.camera.core.camera.model.CameraRoute
@@ -16,23 +18,35 @@ import com.sahidcode404.camera.core.camera.model.RoutingMethod
 import com.sahidcode404.camera.core.camera.model.StreamKind
 import com.sahidcode404.camera.core.camera.model.StreamSpec
 import com.sahidcode404.camera.core.camera.preview.PreviewStreamSelector
+import com.sahidcode404.camera.core.camera.topology.EnvironmentFingerprint
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan
 import kotlin.math.hypot
 import kotlin.math.max
 
-internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraManager) {
+internal class BootstrapPreviewTargetResolver(
+    context: Context,
+    private val cameraManager: CameraManager,
+) {
+    private val hotCacheStore = HotPreviewCacheStore(context.applicationContext)
+
     fun resolve(): PreviewTarget? {
-        val ids = try {
-            cameraManager.cameraIdList.filter { it.isNotBlank() }.distinct().take(MAX_CAMERA_IDS)
-        } catch (_: CameraAccessException) {
-            return null
-        } catch (_: SecurityException) {
-            return null
+        val allIds = advertisedIdsOrNull() ?: return null
+        val boundedIds = allIds.take(MAX_CAMERA_IDS)
+        if (boundedIds.isEmpty()) return null
+
+        if (allIds.size <= MAX_CAMERA_IDS) {
+            val fingerprint = environmentFingerprint(boundedIds)
+            val cached = hotCacheStore.loadOrNull(fingerprint)?.toPreviewTarget()
+            if (cached != null) {
+                val validated = validateCachedTarget(cached, boundedIds)
+                if (validated != null) return validated
+                hotCacheStore.invalidate()
+            }
         }
 
-        return ids.mapNotNull(::candidateOrNull)
+        return boundedIds.mapNotNull(::candidateOrNull)
             .minWithOrNull(
                 compareBy<Candidate>(
                     { facingRank(it.target.facing) },
@@ -46,17 +60,60 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
             ?.target
     }
 
-    private fun candidateOrNull(cameraId: String): Candidate? {
-        val characteristics = try {
-            cameraManager.getCameraCharacteristics(cameraId)
-        } catch (_: CameraAccessException) {
-            return null
-        } catch (_: IllegalArgumentException) {
-            return null
-        } catch (_: SecurityException) {
-            return null
+    private fun validateCachedTarget(
+        cached: PreviewTarget,
+        advertisedIds: List<CameraTransportId>,
+    ): PreviewTarget? {
+        if (advertisedIds.none { it.value == cached.route.logicalCameraId.value }) return null
+
+        val logicalCharacteristics = characteristicsOrNull(cached.route.logicalCameraId.value) ?: return null
+        val physicalId = cached.route.physicalCameraId
+        val sourceCharacteristics = if (physicalId != null) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+            if (cached.route.routingMethod != RoutingMethod.LOGICAL_PHYSICAL_MEMBER) return null
+            if (logicalCharacteristics.physicalCameraIds.none { it == physicalId.value }) return null
+            characteristicsOrNull(physicalId.value) ?: return null
+        } else {
+            logicalCharacteristics
         }
 
+        if (cached.route.routingMethod == RoutingMethod.LOGICAL_PHYSICAL_MEMBER && physicalId == null) return null
+        if (cached.route.routingMethod == RoutingMethod.LOGICAL_DEFAULT && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val caps = logicalCharacteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
+            if (!caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)) return null
+        }
+
+        val streamMap = sourceCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        val supported = try {
+            streamMap.getOutputSizes(SurfaceTexture::class.java)
+        } catch (_: IllegalArgumentException) {
+            null
+        }.orEmpty().any { size ->
+            size.width == cached.streamSize.width && size.height == cached.streamSize.height
+        }
+        if (!supported) return null
+
+        val active = sourceCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        val pixel = sourceCharacteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+        val rawAspect = when {
+            active != null && active.width() > 0 && active.height() > 0 ->
+                active.width().toDouble() / active.height().toDouble()
+            pixel != null && pixel.width > 0 && pixel.height > 0 ->
+                pixel.width.toDouble() / pixel.height.toDouble()
+            else -> cached.sensorLandscapeAspect
+        }
+        if (!rawAspect.isFinite() || rawAspect <= 0.0) return null
+
+        return cached.copy(
+            facing = facing(sourceCharacteristics.get(CameraCharacteristics.LENS_FACING)),
+            sensorOrientationDegrees = sourceCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
+                ?: cached.sensorOrientationDegrees,
+            sensorLandscapeAspect = max(rawAspect, 1.0 / rawAspect),
+        )
+    }
+
+    private fun candidateOrNull(id: CameraTransportId): Candidate? {
+        val characteristics = characteristicsOrNull(id.value) ?: return null
         val streamMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
         val sizes = try {
             streamMap.getOutputSizes(SurfaceTexture::class.java)
@@ -91,14 +148,14 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
         val sensorPhysicalSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)?.let { size ->
             if (size.width > 0f && size.height > 0f) FloatSizeValue(size.width, size.height) else null
         }
-        val facing = facing(characteristics.get(CameraCharacteristics.LENS_FACING))
+        val cameraFacing = facing(characteristics.get(CameraCharacteristics.LENS_FACING))
         val availableCapabilities = (
             characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
         ).toList()
         val logicalDefault = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
             availableCapabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)
         val cameraCapabilities = CameraCapabilities(
-            facing = facing,
+            facing = cameraFacing,
             focalLengthsMm = (
                 characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS) ?: floatArrayOf()
             ).filter { it > 0f }.take(MAX_FOCAL_LENGTHS),
@@ -114,15 +171,15 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
         val rawSensorAspect = PreviewStreamSelector.sensorAspect(cameraCapabilities)
             ?: selected.size.width.toDouble() / selected.size.height.toDouble()
         val route = CameraRoute(
-            logicalCameraId = CameraTransportId(cameraId),
+            logicalCameraId = id,
             physicalCameraId = null,
             routingMethod = if (logicalDefault) RoutingMethod.LOGICAL_DEFAULT else RoutingMethod.DIRECT,
         )
         val target = PreviewTarget(
-            stableId = "bootstrap:$cameraId",
+            stableId = "bootstrap:${id.value}",
             route = route,
             streamSize = selected.size,
-            facing = facing,
+            facing = cameraFacing,
             sensorOrientationDegrees = cameraCapabilities.sensorOrientationDegrees ?: 0,
             sensorLandscapeAspect = max(rawSensorAspect, 1.0 / rawSensorAspect),
         )
@@ -133,6 +190,32 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
             sensorAreaMm2 = sensorPhysicalSize?.let { it.width.toDouble() * it.height.toDouble() } ?: 0.0,
         )
     }
+
+    private fun advertisedIdsOrNull(): List<CameraTransportId>? = try {
+        cameraManager.cameraIdList
+            .filter { it.isNotBlank() }
+            .distinct()
+            .map(::CameraTransportId)
+    } catch (_: CameraAccessException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    private fun characteristicsOrNull(cameraId: String): CameraCharacteristics? = try {
+        cameraManager.getCameraCharacteristics(cameraId)
+    } catch (_: CameraAccessException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+
+    private fun environmentFingerprint(ids: Collection<CameraTransportId>): String =
+        EnvironmentFingerprint.create(Build.FINGERPRINT, Build.VERSION.SDK_INT, ids)
 
     private fun standardFieldOfViewPenalty(capabilities: CameraCapabilities): Double {
         val sensor = capabilities.sensorPhysicalSizeMm ?: return UNKNOWN_FIELD_OF_VIEW_PENALTY
@@ -146,14 +229,14 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
         }
     }
 
-    private fun facing(value: Int?): CameraFacing = when (value) {
+    private fun facing(cameraFacing: Int?): CameraFacing = when (cameraFacing) {
         CameraCharacteristics.LENS_FACING_BACK -> CameraFacing.BACK
         CameraCharacteristics.LENS_FACING_FRONT -> CameraFacing.FRONT
         CameraCharacteristics.LENS_FACING_EXTERNAL -> CameraFacing.EXTERNAL
         else -> CameraFacing.UNKNOWN
     }
 
-    private fun facingRank(facing: CameraFacing): Int = when (facing) {
+    private fun facingRank(cameraFacing: CameraFacing): Int = when (cameraFacing) {
         CameraFacing.BACK -> 0
         CameraFacing.EXTERNAL -> 1
         CameraFacing.FRONT -> 2
@@ -167,11 +250,11 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
         val sensorAreaMm2: Double,
     )
 
-    companion object {
-        private const val MAX_CAMERA_IDS = 32
-        private const val MAX_PREVIEW_SIZES = 64
-        private const val MAX_FOCAL_LENGTHS = 16
-        private const val TARGET_STANDARD_DIAGONAL_FOV_DEGREES = 75.0
-        private const val UNKNOWN_FIELD_OF_VIEW_PENALTY = 10_000.0
+    private companion object {
+        const val MAX_CAMERA_IDS = 32
+        const val MAX_PREVIEW_SIZES = 64
+        const val MAX_FOCAL_LENGTHS = 16
+        const val TARGET_STANDARD_DIAGONAL_FOV_DEGREES = 75.0
+        const val UNKNOWN_FIELD_OF_VIEW_PENALTY = 10_000.0
     }
 }

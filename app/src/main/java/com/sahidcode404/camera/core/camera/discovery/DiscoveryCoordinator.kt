@@ -1,7 +1,9 @@
 package com.sahidcode404.camera.core.camera.discovery
 
 import android.content.Context
+import com.sahidcode404.camera.core.camera.model.CameraRoute
 import com.sahidcode404.camera.core.camera.model.CameraTopology
+import com.sahidcode404.camera.core.camera.model.HotPreviewSeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,14 +27,29 @@ class DiscoveryCoordinator(context: Context) {
 
     val state: StateFlow<DiscoveryState> = mutableState.asStateFlow()
 
-    suspend fun refresh() {
+    suspend fun recordPreviewVerified(seed: HotPreviewSeed) {
+        refreshMutex.withLock {
+            val updated = withContext(Dispatchers.IO) { discovery.recordPreviewVerified(seed) } ?: return@withLock
+            mutableState.value = when (val current = mutableState.value) {
+                DiscoveryState.Idle -> DiscoveryState.Cached(updated)
+                is DiscoveryState.Cached -> DiscoveryState.Cached(updated)
+                is DiscoveryState.Discovering -> DiscoveryState.Discovering(updated)
+                is DiscoveryState.Complete -> DiscoveryState.Complete(updated)
+                is DiscoveryState.Failed -> current.copy(cachedTopology = updated)
+            }
+        }
+    }
+
+    suspend fun refresh(verifiedPreviewRoute: CameraRoute? = null) {
         refreshMutex.withLock {
             val cached = withContext(Dispatchers.IO) { discovery.loadCachedTopologyOrNull() }
             if (cached != null) mutableState.value = DiscoveryState.Cached(cached)
             mutableState.value = DiscoveryState.Discovering(cached)
 
             try {
-                val topology = withContext(Dispatchers.IO) { discovery.discover() }
+                val topology = withContext(Dispatchers.IO) {
+                    discovery.discover(verifiedPreviewRoute = verifiedPreviewRoute)
+                }
                 mutableState.value = DiscoveryState.Complete(topology)
             } catch (error: RuntimeException) {
                 mutableState.value = DiscoveryState.Failed(

@@ -12,6 +12,7 @@ import com.sahidcode404.camera.core.camera.model.CameraRoute
 import com.sahidcode404.camera.core.camera.model.CameraTopology
 import com.sahidcode404.camera.core.camera.model.CameraTransportId
 import com.sahidcode404.camera.core.camera.model.DiscoveryFailure
+import com.sahidcode404.camera.core.camera.model.HotPreviewSeed
 import com.sahidcode404.camera.core.camera.model.RoutingMethod
 import com.sahidcode404.camera.core.camera.topology.CameraTopologyResolver
 import com.sahidcode404.camera.core.camera.topology.EnvironmentFingerprint
@@ -21,14 +22,36 @@ class UniversalCameraDiscovery(context: Context) {
     private val appContext = context.applicationContext
     private val cameraManager = appContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val cacheStore = TopologyCacheStore(appContext)
+    private val hotCacheStore = HotPreviewCacheStore(appContext)
 
     fun loadCachedTopologyOrNull(): CameraTopology? {
         val ids = enumerateAdvertisedIds().getOrNull() ?: return null
+        if (ids.size > DiscoveryBounds.MAX_CAMERA_IDS) return null
         val fingerprint = environmentFingerprint(ids)
         return cacheStore.loadOrNull(fingerprint)
     }
 
-    fun discover(): CameraTopology {
+    fun recordPreviewVerified(seed: HotPreviewSeed): CameraTopology? {
+        val ids = enumerateAdvertisedIds().getOrNull() ?: return null
+        if (ids.isEmpty() || ids.size > DiscoveryBounds.MAX_CAMERA_IDS) return null
+        if (ids.none { it == seed.route.logicalCameraId }) return null
+        val fingerprint = environmentFingerprint(ids)
+
+        try {
+            hotCacheStore.save(fingerprint, seed)
+        } catch (_: IOException) {
+            // Hot-cache persistence is non-critical and must never affect a live preview.
+        } catch (_: IllegalArgumentException) {
+            // Corrupt/unbounded seed data becomes a cache miss on the next launch.
+        }
+
+        val cached = cacheStore.loadOrNull(fingerprint) ?: return null
+        val updated = RuntimeTrustReconciler.markPreviewVerified(cached, seed.route) ?: return cached
+        saveTopologySafely(updated)
+        return updated
+    }
+
+    fun discover(verifiedPreviewRoute: CameraRoute? = null): CameraTopology {
         val failures = mutableListOf<DiscoveryFailure>()
         val advertisedResult = enumerateAdvertisedIds()
         val advertisedIds = advertisedResult.getOrElse { error ->
@@ -46,6 +69,7 @@ class UniversalCameraDiscovery(context: Context) {
         }
 
         val fingerprint = environmentFingerprint(boundedAdvertisedIds)
+        val previousTopology = cacheStore.loadOrNull(fingerprint)
         val permissionGranted = appContext.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val collector = Camera2MetadataCollector(permissionGranted)
         val profiles = mutableListOf<CameraProfile>()
@@ -85,15 +109,13 @@ class UniversalCameraDiscovery(context: Context) {
             failures = failures,
             truncatedFailureCount = (advertisedIds.size - boundedAdvertisedIds.size).coerceAtLeast(0),
         )
-        val topology = resolved.copy(diagnostics = resolved.diagnostics.copy(ndk = ndkSummary))
-
-        try {
-            cacheStore.save(topology)
-        } catch (_: IOException) {
-            // Cache persistence is non-critical discovery state; discovery results remain valid in memory.
-        } catch (_: IllegalArgumentException) {
-            // A bounded serialization failure must not take down camera discovery.
-        }
+        val withDiagnostics = resolved.copy(diagnostics = resolved.diagnostics.copy(ndk = ndkSummary))
+        val topology = RuntimeTrustReconciler.merge(
+            discovered = withDiagnostics,
+            previous = previousTopology,
+            verifiedPreviewRoute = verifiedPreviewRoute,
+        )
+        saveTopologySafely(topology)
         return topology
     }
 
@@ -109,6 +131,16 @@ class UniversalCameraDiscovery(context: Context) {
         publiclyAdvertised = publiclyAdvertised,
         evidence = collected.evidenceNotes,
     )
+
+    private fun saveTopologySafely(topology: CameraTopology) {
+        try {
+            cacheStore.save(topology)
+        } catch (_: IOException) {
+            // Cache persistence is non-critical discovery state; discovery results remain valid in memory.
+        } catch (_: IllegalArgumentException) {
+            // A bounded serialization failure must not take down camera discovery.
+        }
+    }
 
     private fun enumerateAdvertisedIds(): Result<List<CameraTransportId>> = try {
         Result.success(

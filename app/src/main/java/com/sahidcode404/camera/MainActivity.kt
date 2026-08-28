@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +53,7 @@ import com.sahidcode404.camera.core.camera.session.CameraSessionController
 import com.sahidcode404.camera.core.camera.session.CameraSessionState
 import com.sahidcode404.camera.core.camera.session.PreviewTarget
 import com.sahidcode404.camera.core.camera.session.PreviewTargetFactory
+import com.sahidcode404.camera.core.camera.session.toHotPreviewSeed
 import com.sahidcode404.camera.ota.DevelopmentUpdateState
 import com.sahidcode404.camera.ota.DevelopmentUpdater
 import java.util.Locale
@@ -82,13 +83,15 @@ class MainActivity : ComponentActivity() {
             val sessionState by cameraSessionController.state.collectAsState()
             var aspectMode by remember { mutableStateOf(PreviewAspectMode.FOUR_THREE) }
 
-            val firstFrameGeneration = (sessionState as? CameraSessionState.Previewing)
+            val renderedPreview = (sessionState as? CameraSessionState.Previewing)
                 ?.takeIf { it.firstFrameSeen }
-                ?.generation
+            val firstFrameGeneration = renderedPreview?.generation
             LaunchedEffect(firstFrameGeneration) {
-                if (firstFrameGeneration != null && !postPreviewWorkStarted) {
+                val verifiedPreview = renderedPreview ?: return@LaunchedEffect
+                discoveryCoordinator.recordPreviewVerified(verifiedPreview.target.toHotPreviewSeed())
+                if (!postPreviewWorkStarted) {
                     postPreviewWorkStarted = true
-                    discoveryCoordinator.refresh()
+                    discoveryCoordinator.refresh(verifiedPreviewRoute = verifiedPreview.target.route)
                     if (BuildConfig.OTA_CHANNEL == "development") {
                         developmentUpdater.checkForUpdates()
                     }
@@ -107,7 +110,13 @@ class MainActivity : ComponentActivity() {
                         onAspectMode = { aspectMode = it },
                         onRequestPermission = ::requestCameraPermission,
                         onRefreshDiscovery = {
-                            lifecycleScope.launch { discoveryCoordinator.refresh() }
+                            val verifiedRoute = (sessionState as? CameraSessionState.Previewing)
+                                ?.takeIf { it.firstFrameSeen }
+                                ?.target
+                                ?.route
+                            lifecycleScope.launch {
+                                discoveryCoordinator.refresh(verifiedPreviewRoute = verifiedRoute)
+                            }
                         },
                         onCheckUpdate = {
                             lifecycleScope.launch { developmentUpdater.checkForUpdates() }

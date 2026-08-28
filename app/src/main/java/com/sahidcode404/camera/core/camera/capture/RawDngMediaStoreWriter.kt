@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureResult
-import android.media.DngCreator
+import android.hardware.camera2.DngCreator
 import android.media.Image
 import android.net.Uri
 import android.os.Build
@@ -131,7 +131,7 @@ internal class RawDngMediaStoreWriter(context: Context) {
 
     private companion object {
         const val CAMERA_DIRECTORY = "Camera"
-        const val PUBLIC_DIRECTORY = Environment.DIRECTORY_DCIM
+        val PUBLIC_DIRECTORY: String = Environment.DIRECTORY_DCIM
         const val DNG_MIME_TYPE = "image/x-adobe-dng"
     }
 }

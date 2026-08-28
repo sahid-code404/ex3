@@ -44,7 +44,7 @@ jobs:
         run: |
           gradle --no-daemon --stacktrace \
             :app:verifyApi23Baseline \
-            :app:testDevOtaUnitTest \
+            :app:testDebugUnitTest \
             :app:lintDevOta \
             :app:assembleDevOta
 

@@ -92,13 +92,16 @@ internal class BootstrapPreviewTargetResolver(private val cameraManager: CameraM
             if (size.width > 0f && size.height > 0f) FloatSizeValue(size.width, size.height) else null
         }
         val facing = facing(characteristics.get(CameraCharacteristics.LENS_FACING))
-        val availableCapabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES).orEmpty().toList()
+        val availableCapabilities = (
+            characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
+        ).toList()
         val logicalDefault = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
             availableCapabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)
         val cameraCapabilities = CameraCapabilities(
             facing = facing,
-            focalLengthsMm = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
-                .orEmpty().filter { it > 0f }.take(MAX_FOCAL_LENGTHS),
+            focalLengthsMm = (
+                characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS) ?: floatArrayOf()
+            ).filter { it > 0f }.take(MAX_FOCAL_LENGTHS),
             sensorPhysicalSizeMm = sensorPhysicalSize,
             pixelArraySize = pixel,
             activeArray = active,

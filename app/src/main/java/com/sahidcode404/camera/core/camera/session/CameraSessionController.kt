@@ -322,7 +322,7 @@ public class CameraSessionController(context: Context) {
 
         try {
             texture.setDefaultBufferSize(intent.target.streamSize.width, intent.target.streamSize.height)
-            previewSurface?.close()
+            previewSurface?.release()
             val surface = Surface(texture)
             previewSurface = surface
             mutableState.value = CameraSessionState.Configuring(intent.generation, intent.target)
@@ -332,7 +332,7 @@ public class CameraSessionController(context: Context) {
                 intent.target.route.physicalCameraId != null
             ) {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-                    surface.close()
+                    surface.release()
                     previewSurface = null
                     fail(intent, "Physical camera routing requires API 28+")
                     closingDevice = true
@@ -452,7 +452,7 @@ public class CameraSessionController(context: Context) {
         }
         captureSession?.close()
         captureSession = null
-        previewSurface?.close()
+        previewSurface?.release()
         previewSurface = null
         val device = cameraDevice
         cameraDevice = null

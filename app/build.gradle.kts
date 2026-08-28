@@ -16,6 +16,7 @@ val ciRunNumber = providers.environmentVariable("GITHUB_RUN_NUMBER").orNull?.let
 val sourceSha = providers.environmentVariable("GITHUB_SHA").getOrElse("local")
 val buildTimeUtc = providers.environmentVariable("CAMERA_BUILD_TIME_UTC").getOrElse("unknown")
 val devSignerSha256 = "194bea7868e8a5d4a20d0dc22474e15f3f617eeb90471d2cd7ea405d341774e1"
+val devUpdateMetadataUrl = "https://github.com/sahid-code404/ex3/releases/download/dev-latest/update.json"
 
 val encodedDevSigner = rootProject.file("tools/dev-signing/camera-dev.jks.b64")
 val decodedDevSigner = layout.buildDirectory.file("dev-signing/camera-dev.jks").get().asFile
@@ -45,6 +46,7 @@ android {
         buildConfigField("String", "GIT_SHA", sourceSha.asBuildConfigLiteral())
         buildConfigField("String", "BUILD_TIME_UTC", buildTimeUtc.asBuildConfigLiteral())
         buildConfigField("String", "DEV_SIGNER_SHA256", devSignerSha256.asBuildConfigLiteral())
+        buildConfigField("String", "DEV_UPDATE_METADATA_URL", devUpdateMetadataUrl.asBuildConfigLiteral())
         buildConfigField("String", "OTA_CHANNEL", "none".asBuildConfigLiteral())
 
         ndk {
